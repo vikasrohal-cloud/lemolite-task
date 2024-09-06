@@ -1,5 +1,9 @@
-from flask import Flask,render_template,redirect,url_for,session,request
+from flask import Flask, render_template, request, url_for, redirect, session, flash, jsonify
 import pymongo
+import bcrypt
+from werkzeug.utils import secure_filename
+import os
+from bson.objectid import ObjectId
 
 
 app = Flask(__name__)
@@ -8,6 +12,15 @@ client = pymongo.MongoClient("mongodb://localhost:27017/total_record")
 db = client.get_database('total_record')
 records = db.register
 todos = db.todos
+
+
+UPLOAD_FOLDER = 'static/uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    os.makedirs(app.config['UPLOAD_FOLDER'])
 
 @app.route("/", methods=['POST', 'GET'])
 def index():
@@ -35,7 +48,7 @@ def index():
             message = 'Passwords should match!'
             return render_template('index.html', message=message)
 
-        if avatar and allowed_file(avatar.filename):
+        if avatar :
             filename = secure_filename(avatar.filename)
             avatar.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
             avatar_url = os.path.join(app.config['UPLOAD_FOLDER'], filename)
@@ -94,6 +107,34 @@ def dashboard():
         return render_template('dashboard.html', user=user_data, todos=todos_list)
     else:
         return redirect(url_for("login"))
+    
+@app.route("/add_todo", methods=["POST"])
+def add_todo():
+    if "email" in session:
+        task = request.form.get("task")
+        if task:
+            todos.insert_one({"task": task, "user_email": session["email"]})
+        return redirect(url_for("dashboard"))
+    else:
+        return redirect(url_for("login"))
+
+@app.route("/edit_todo/<todo_id>", methods=["GET", "POST"])
+def edit_todo(todo_id):
+    todo = todos.find_one({"_id": ObjectId(todo_id)})
+    if request.method == "POST":
+        task = request.form.get("task")
+        todos.update_one({"_id": ObjectId(todo_id)}, {"$set": {"task": task}})
+        return redirect(url_for("dashboard"))
+    return render_template("edit_todo.html", todo=todo)
+
+@app.route("/delete_todo/<todo_id>")
+def delete_todo(todo_id):
+    todos.delete_one({"_id": ObjectId(todo_id)})
+    return redirect(url_for("dashboard"))
+
+
+
+
     
 if __name__ == "__main__":
     app.run(debug=True)
